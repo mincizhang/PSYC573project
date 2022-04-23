@@ -62,6 +62,7 @@ the skewness of the distributions
 ```{r data psyc573, message=FALSE, warning=FALSE}
 psyc573 <- read_sav("psyc573.sav")
 
+
 # Recode `ethnic1final` to a factor variable
 psyc573$ethnic1final <- psyc573$ethnic1final -1
 psyc573$ethnic1final <- factor(psyc573$ethnic1final,
@@ -73,10 +74,11 @@ psyc573$ethnic1final <- factor(psyc573$ethnic1final,
 
 ```{r summ-var, message=FALSE, warning=FALSE}
 # descriptive statistics summary by ethnic groups
-datasummary( (gpa_d + pop_d + like_d + logpop1 + loglike1 + loggpa1 )  * 
+datasummary( (logpop1 + loglike1 + loggpa1 )  * 
                 (N + Mean + SD + Min + Max + Histogram) ~ 
                 factor(ethnic1final, labels = c("Hispanic", "Asian")),
             data = psyc573)
+
 
 # correlation by ethnic groups
 hisp<- psyc573 %>% filter(ethnic1final== 'Hispanic')
@@ -119,7 +121,7 @@ $$
 ```{r m1, echo=TRUE, results='hide'}
 # gpa1 predicts popularity change score
 m1 <- brm(
-    pop_d ~ loggpa1 * ethnic1final,
+    pop_d ~ Gpa1 * ethnic1final,
     data = psyc573,
     prior = prior(normal(0.1, 0.05), class = "b") +
         prior(normal(0.1, 0.05), class = "b", coef = "ethnic1finalAsian") +
@@ -155,8 +157,8 @@ b_loggpa1:ethnic1finalAsian
 ```{r summ-m1, echo=TRUE}
 as_draws(m1) %>%
     mutate_variables(
-        b_hisp = b_loggpa1,
-        b_asian = b_loggpa1 + `b_loggpa1:ethnic1finalAsian`
+        b_hisp = b_Gpa1,
+        b_asian = b_Gpa1 + `b_Gpa1:ethnic1finalAsian`
     ) %>%
     posterior::subset_draws(
         variable = c("b_hisp", "b_asian")
@@ -167,7 +169,7 @@ as_draws(m1) %>%
 
 plot(
     conditional_effects(m1,
-        effects = "loggpa1",
+        effects = "Gpa1",
         conditions = data.frame(ethnic1final = c("Hispanic", "Asian"),
                                 cond__ = c("Hispanic", "Asian"))
     ),
@@ -216,7 +218,7 @@ $$
 ```{r m2, results='hide'}
 # gpa1 predicts likability change score
 m2 <- brm(
-    like_d ~ loggpa1 * ethnic1final,
+    like_d ~ Gpa1 * ethnic1final,
     data = psyc573,
     prior = prior(normal(0.1, 0.05), class = "b") +
         prior(normal(0.1, 0.05), class = "b", coef = "ethnic1finalAsian") +
@@ -249,8 +251,8 @@ The following table and graph show the posterior distributions of b_hispanic and
 ```{r summ-m2}
 as_draws(m2) %>%
     mutate_variables(
-        b_hisp = b_loggpa1,
-        b_asian = b_loggpa1 + `b_loggpa1:ethnic1finalAsian`
+        b_hisp = b_Gpa1,
+        b_asian = b_Gpa1 + `b_Gpa1:ethnic1finalAsian`
     ) %>%
     posterior::subset_draws(
         variable = c("b_hisp", "b_asian")
@@ -261,7 +263,7 @@ as_draws(m2) %>%
 
 plot(
     conditional_effects(m2,
-        effects = "loggpa1",
+        effects = "Gpa1",
         conditions = data.frame(ethnic1final = c("Hispanic", "Asian"),
                                 cond__ = c("Hispanic", "Asian"))
     ),
@@ -312,7 +314,7 @@ $$
 ```{r m3, results='hide'}
 # pop1 predicts gpa change score
 m3 <- brm(
-    gpa_d ~ logpop1 * ethnic1final,
+    gpa_d ~ pop1 * ethnic1final,
     data = psyc573,
     prior = prior(normal(0.5, 0.5), class = "b") +
         prior(normal(0.5, 0.5), class = "b", coef = "ethnic1finalAsian") +
@@ -346,8 +348,8 @@ The following table and graph show the posterior distributions of b_hispanic and
 ```{r summ-m3}
 as_draws(m3) %>%
     mutate_variables(
-        b_hisp = b_logpop1,
-        b_asian = b_logpop1 + `b_logpop1:ethnic1finalAsian`
+        b_hisp = b_pop1,
+        b_asian = b_pop1 + `b_pop1:ethnic1finalAsian`
     ) %>%
     posterior::subset_draws(
         variable = c("b_hisp", "b_asian")
@@ -358,7 +360,7 @@ as_draws(m3) %>%
 
 plot(
     conditional_effects(m3,
-        effects = "logpop1",
+        effects = "pop1",
         conditions = data.frame(ethnic1final = c("Hispanic", "Asian"),
                                 cond__ = c("Hispanic", "Asian"))
     ),
@@ -405,7 +407,7 @@ $$
 ```{r m4, results='hide'}
 # like1 predicts gpa change score
 m4 <- brm(
-    gpa_d ~ loglike1 * ethnic1final,
+    gpa_d ~ like1 * ethnic1final,
     data = psyc573,
     prior = prior(normal(0.5, 0.5), class = "b") +
         prior(normal(0.5, 0.5), class = "b", coef = "ethnic1finalAsian") +
@@ -443,8 +445,8 @@ The following table and graph show the posterior distributions of b_hispanic and
 ```{r summ-m4}
 as_draws(m4) %>%
     mutate_variables(
-        b_hisp = b_loglike1,
-        b_asian = b_loglike1 + `b_loglike1:ethnic1finalAsian`
+        b_hisp = b_like1,
+        b_asian = b_like1 + `b_like1:ethnic1finalAsian`
     ) %>%
     posterior::subset_draws(
         variable = c("b_hisp", "b_asian")
@@ -455,7 +457,7 @@ as_draws(m4) %>%
 
 plot(
     conditional_effects(m4,
-        effects = "loglike1",
+        effects = "like1",
         conditions = data.frame(ethnic1final = c("Hispanic", "Asian"),
                                 cond__ = c("Hispanic", "Asian"))
     ),
