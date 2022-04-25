@@ -1,0 +1,474 @@
+---
+title: "HW 9"
+author: "Minci Zhang"
+date: '2022-04-16'
+output: html_document 
+
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message=FALSE, warning= FALSE)
+```
+
+```{r load-pkg, message=FALSE, include=FALSE}
+library(brms)
+library(dplyr)
+library(haven)
+library(ggplot2)  # for plots
+library(magrittr)  # for `%>%` operator
+library(here)
+library(readxl)  # for reading excel files
+library(modelsummary)  # for summarizing data
+library(rstan)
+rstan_options(auto_write = TRUE)  # save compiled STAN object
+options(mc.cores = 2)  # use two cores
+library(posterior)
+library(bayesplot)
+theme_set(theme_classic() +
+    theme(panel.grid.major.y = element_line(color = "grey92")))
+```
+
+# Research Question:
+1) Would the pattern of gpa predicting changes in popularity over time differ 
+for Hispanic vs Asian American students?
+2) Would the pattern of gpa predicting changes in likability over time differ 
+for Hispanic vs Asian American students?
+3) Would the pattern of popularity predicting changes in gpa over time differ 
+for Hispanic vs Asian American students?
+4) Would the pattern of likability predicting changes in gpa over time differ 
+for Hispanic vs Asian American students?
+
+
+
+
+# Variables:
+log transformation has been performed on the original gpa1 popularity1 and likability1 values to fix
+the skewness of the distributions 
+
+- 'ethnic1final': ethnicity of the students: 1= Hispanic 2=Asian
+
+- 'loggpa1': log transformed gpa at time one 
+- 'logpop1': log transformed value for how popular students are at time one 
+- 'loglike1': log transformed value for how likable students are at time one 
+
+
+- 'gpa_d': difference between gpa at time 1 and time 2(one year later)= (gpa2-gpa1)
+- 'pop_d': difference between popularity at time 1 and 2= pop2- pop1
+- 'like_d': difference between likability at time1 and 2 = like1-like2
+
+## Import Data
+
+```{r data psyc573, message=FALSE, warning=FALSE}
+psyc573 <- read_sav("psyc573.sav")
+
+summary(psyc573)
+# Recode `ethnic1final` to a factor variable
+psyc573$ethnic1final <- psyc573$ethnic1final -1
+psyc573$ethnic1final <- factor(psyc573$ethnic1final,
+    levels = c(0, 1),
+    labels = c("Hispanic", "Asian"))
+```
+
+## Variable Summary
+
+```{r summ-var, message=FALSE, warning=FALSE}
+# descriptive statistics summary by ethnic groups
+datasummary( (logpop1 + loglike1 + loggpa1 )  * 
+                (N + Mean + SD + Min + Max + Histogram) ~ 
+                factor(ethnic1final, labels = c("Hispanic", "Asian")),
+            data = psyc573)
+
+
+# correlation by ethnic groups
+hisp<- psyc573 %>% filter(ethnic1final== 'Hispanic')
+asian <- psyc573 %>% filter(ethnic1final == 'Asian')
+
+hisp %>% 
+  select(gpa_d, pop_d, like_d, loggpa1, logpop1, loglike1) %>%
+  datasummary_correlation(method="pearson")
+
+asian %>% 
+  select(gpa_d, pop_d, like_d, loggpa1, logpop1, loglike1) %>%
+  datasummary_correlation(method="pearson")
+```
+
+
+# Model for gpa time 1 predicting popularity change score :
+
+## Model
+
+Let $G$ = loggpa1, $P$ = pop_d, $E$ = ethnic1final
+$$
+ \begin{aligned}
+    P_i & \sim N(\mu_i, \sigma)  \\
+    \mu_i & = \beta_0 + \beta_1 G_i + \beta_2 E_i + \beta_3 G_i \times E_i \\
+  \end{aligned}
+$$
+## Prior
+
+$$
+  \begin{aligned}
+    \beta_0 & \sim N(0, 1) \\
+    \beta_1 & \sim N(0.1, 0.05) \\
+    \beta_2 & \sim N(0.1, 0.05) \\
+    \beta_3 & \sim N(0.1, 0.05) \\
+    \sigma & \sim t^+_3(0, 2.5)
+  \end{aligned}
+$$
+
+
+```{r m1, echo=TRUE, results='hide'}
+# gpa1 predicts popularity change score
+m1 <- brm(
+    pop_d ~ Gpa1 * ethnic1final,
+    data = psyc573,
+    family= "skew_normal",
+    prior = prior(student_t(3, 0.1, 0.05), class = "b") +
+        prior(normal(0.1, 0.05), class = "b", coef = "ethnic1finalAsian") +
+        prior(normal(0, 1), class = "Intercept") +
+        prior(student_t(3, 0, 2.5), class = "sigma"),
+    seed = 940,
+    iter = 4000
+)
+ 
+```
+
+```{r model1 summary, echo=TRUE}
+m1
+```
+
+```{r posterior check model1, echo=TRUE}
+pp_check(m1, type = "dens_overlay_grouped", group = "ethnic1final")
+```
+
+
+# Results:
+
+As shown in the graph below, the chains mixed well.
+```{r convergence1, echo=TRUE}
+mcmc_rank_hist(m1)
+mcmc_trace(as.array(m1))
+```
+
+
+The following table and graph show the posterior distributions of b_hispanic and b_asian
+b_loggpa1:ethnic1finalAsian
+
+```{r summ-m1, echo=TRUE}
+as_draws(m1) %>%
+    mutate_variables(
+        b_hisp = b_Gpa1,
+        b_asian = b_Gpa1 + `b_Gpa1:ethnic1finalAsian`
+    ) %>%
+    posterior::subset_draws(
+        variable = c("b_hisp", "b_asian")
+    ) %>%
+    summarize_draws()
+
+
+
+plot(
+    conditional_effects(m1,
+        effects = "Gpa1",
+        conditions = data.frame(ethnic1final = c("Hispanic", "Asian"),
+                                cond__ = c("Hispanic", "Asian"))
+    ),
+    points = TRUE
+)
+```
+
+# Interpretation:
+
+The analysis showed that on average, the patterns for gpa at time 1 predicting changes in levels of
+popularity differed for Asian and Hispanic American middle school students. 
+
+
+Specifically, gpa at time1 is more strongly associated with an increase in popularity from time 1 to 
+time2 for Asian American students (posterior mean= 0.11, 90%CI [0.10, 0.30]) than for Hispanic American
+students (posterior mean = 0.11, 90% CI [0.03, 0.19]).
+
+
+
+
+
+
+# Model for gpa time1 predicting likability change score:
+
+## Models
+Let $G$ = loggpa1, $L$ = like_d, $E$ = ethnic1final
+
+$$
+ \begin{aligned}
+    L_i & \sim N(\mu_i, \sigma)  \\
+    \mu_i & = \beta_0 + \beta_1 G_i + \beta_2 E_i + \beta_3 G_i \times E_i \\
+  \end{aligned}
+$$
+
+## Prior: 
+$$
+  \begin{aligned}
+    \beta_0 & \sim N(0, 1) \\
+    \beta_1 & \sim N(0.1, 0.05) \\
+    \beta_2 & \sim N(0.1, 0.05) \\
+    \beta_3 & \sim N(0.1, 0.05) \\
+    \sigma & \sim t^+_3(0, 2.5)
+  \end{aligned}
+$$
+
+```{r m2, results='hide'}
+# gpa1 predicts likability change score
+m2 <- brm(
+    like_d ~ Gpa1 * ethnic1final,
+    data = psyc573,
+    prior = prior(normal(0.1, 0.05), class = "b") +
+        prior(normal(0.1, 0.05), class = "b", coef = "ethnic1finalAsian") +
+        prior(normal(0, 1), class = "Intercept") +
+        prior(student_t(3, 0, 2.5), class = "sigma"),
+    seed = 941,
+    iter = 4000
+)
+ 
+```
+
+```{r model2 summary}
+summary(m2)
+```
+
+```{r posterior check model2}
+pp_check(m2, type = "dens_overlay_grouped", group = "ethnic1final")
+```
+
+# Results:
+
+As shown in the graph below, the chains mixed well.
+```{r convergence2}
+mcmc_rank_hist(m2)
+mcmc_trace(as.array(m2))
+```
+
+The following table and graph show the posterior distributions of b_hispanic and b_asian
+
+```{r summ-m2}
+as_draws(m2) %>%
+    mutate_variables(
+        b_hisp = b_Gpa1,
+        b_asian = b_Gpa1 + `b_Gpa1:ethnic1finalAsian`
+    ) %>%
+    posterior::subset_draws(
+        variable = c("b_hisp", "b_asian")
+    ) %>%
+    summarize_draws()
+
+
+
+plot(
+    conditional_effects(m2,
+        effects = "Gpa1",
+        conditions = data.frame(ethnic1final = c("Hispanic", "Asian"),
+                                cond__ = c("Hispanic", "Asian"))
+    ),
+    points = TRUE
+)
+```
+
+
+# Interpretation:
+
+The analysis showed that on average, the patterns for gpa at time 1 predicting changes in levels of
+likability differed for Asian and Hispanic American middle school students. 
+
+
+Specifically, gpa at time1 is more strongly associated with an increase in likability from time 1 to 
+time2 for Asian American students (posterior mean= 0.21, 90%CI [0.11, 0.32]) than for Hispanic American
+students (posterior mean = 0.10, 90% CI [0.02 0.18]).
+
+
+
+
+
+# Model for pop1 predicting gpa change score :
+
+## Model:
+Let $G$ = gpa_d, $P$ = logpop1, $E$ = ethnic1final
+
+$$
+ \begin{aligned}
+    G_i & \sim N(\mu_i, \sigma)  \\
+    \mu_i & = \beta_0 + \beta_1 P_i + \beta_2 E_i + \beta_3 P_i \times E_i \\
+  \end{aligned}
+$$
+
+## Prior: 
+$$
+  \begin{aligned}
+    \beta_0 & \sim N(1, 0.5) \\
+    \beta_1 & \sim N(0.5, 0.5) \\
+    \beta_2 & \sim N(0.5, 0.5) \\
+    \beta_3 & \sim N(0.5, 0.5) \\
+    \sigma & \sim t^+_3(0, 2.5)
+  \end{aligned}
+$$
+
+
+
+```{r m3, results='hide'}
+# pop1 predicts gpa change score
+m3 <- brm(
+    gpa_d ~ pop1 * ethnic1final,
+    data = psyc573,
+    prior = prior(normal(0.5, 0.5), class = "b") +
+        prior(normal(0.5, 0.5), class = "b", coef = "ethnic1finalAsian") +
+        prior(normal(1, 0.5), class = "Intercept") +
+        prior(student_t(3, 0, 2.5), class = "sigma"),
+    seed = 939,
+    iter = 4000
+)
+ 
+```
+
+
+```{r model3 summary}
+summary(m3)
+```
+
+```{r posterior check model3}
+pp_check(m3, type = "dens_overlay_grouped", group = "ethnic1final")
+```
+# Results:
+
+As shown in the graph below, the chains mixed well.
+```{r convergence3}
+mcmc_rank_hist(m3)
+mcmc_trace(as.array(m3))
+```
+
+
+The following table and graph show the posterior distributions of b_hispanic and b_asian
+
+```{r summ-m3}
+as_draws(m3) %>%
+    mutate_variables(
+        b_hisp = b_pop1,
+        b_asian = b_pop1 + `b_pop1:ethnic1finalAsian`
+    ) %>%
+    posterior::subset_draws(
+        variable = c("b_hisp", "b_asian")
+    ) %>%
+    summarize_draws()
+
+
+
+plot(
+    conditional_effects(m3,
+        effects = "pop1",
+        conditions = data.frame(ethnic1final = c("Hispanic", "Asian"),
+                                cond__ = c("Hispanic", "Asian"))
+    ),
+    points = TRUE
+)
+```
+# Interpretation:
+
+The analysis indicate that the patterns for popularity at time 1 predicting increase in gpa from time1
+and time2 did not differ for Hispanic (posterior mean= 0.08, 90 CI [0.00, 0.16]) and Asian (posterior mean= 0.01, 95% CI[-0.00, 0.07]) American students ($\beta_3$ (the beta for pop1 x gpa_d)=-0.017, 95% CI [-0.18 0.05])
+
+
+
+
+
+
+
+
+# Model for like1 predicting gpa change score :
+
+## Model
+Let $G$ = gpa_d, $P$ = loglike1, $E$ = ethnic1final
+$$
+ \begin{aligned}
+    G_i & \sim N(\mu_i, \sigma)  \\
+    \mu_i & = \beta_0 + \beta_1 L_i + \beta_2 E_i + \beta_3 L_i \times E_i \\
+  \end{aligned}
+$$
+## Prior
+
+$$
+  \begin{aligned}
+    \beta_0 & \sim N(1, 0.5) \\
+    \beta_1 & \sim N(0.5, 0.5) \\
+    \beta_2 & \sim N(0.5, 0.5) \\
+    \beta_3 & \sim N(0.5, 0.5) \\
+    \sigma & \sim t^+_4(0, 3)
+  \end{aligned}
+$$
+
+
+
+
+```{r m4, results='hide'}
+# like1 predicts gpa change score
+m4 <- brm(
+    gpa_d ~ like1 * ethnic1final,
+    data = psyc573,
+    prior = prior(normal(0.5, 0.5), class = "b") +
+        prior(normal(0.5, 0.5), class = "b", coef = "ethnic1finalAsian") +
+        prior(normal(1, 0.5), class = "Intercept") +
+        prior(student_t(3, 0, 2.5), class = "sigma"),
+    seed = 938,
+    iter = 4000
+)
+ 
+```
+
+```{r model4 summary}
+summary(m4)
+```
+
+
+```{r posterior check mode4}
+pp_check(m4, type = "dens_overlay_grouped", group = "ethnic1final")
+```
+
+
+
+# Results:
+
+As shown in the graph below, the chains mixed well.
+```{r convergence4}
+mcmc_rank_hist(m4)
+mcmc_trace(as.array(m4))
+```
+
+
+
+The following table and graph show the posterior distributions of b_hispanic and b_asian
+
+```{r summ-m4}
+as_draws(m4) %>%
+    mutate_variables(
+        b_hisp = b_like1,
+        b_asian = b_like1 + `b_like1:ethnic1finalAsian`
+    ) %>%
+    posterior::subset_draws(
+        variable = c("b_hisp", "b_asian")
+    ) %>%
+    summarize_draws()
+
+
+
+plot(
+    conditional_effects(m4,
+        effects = "like1",
+        conditions = data.frame(ethnic1final = c("Hispanic", "Asian"),
+                                cond__ = c("Hispanic", "Asian"))
+    ),
+    points = TRUE
+)
+```
+
+
+
+# Interpretation:
+
+The analysis indicate that the patterns for likability at time 1 predicting increase in gpa from time1
+and time2 did not differ for Hispanic (posterior mean= -0.05, 90 CI [-0.13, 0.03]) and Asian (posterior mean= -0.02, 95% CI[-0.08, 0.03]) American students ($\beta_3$ (the beta for like1 x gpa_d)=0.03, 95% CI [-0.09 0.15])
